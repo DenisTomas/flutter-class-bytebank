@@ -24,7 +24,7 @@ class TransactionsList extends StatelessWidget {
                 break;
 
               case ConnectionState.waiting:
-                return const Progress();
+                return Progress();
 
               case ConnectionState.active:
                 break;

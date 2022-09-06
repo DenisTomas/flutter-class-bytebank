@@ -34,7 +34,7 @@ class TransactionWebClient {
       return Transaction.fromJson(jsonDecode(response.body));
     }
 
-    throw HttpException(_getMessage(response.statusCode));
+    throw HttpException(_getMessage(response.statusCode), response.statusCode);
   }
 
   String? _getMessage(int statusCode) {

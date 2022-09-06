@@ -5,7 +5,9 @@ import 'package:bytebank/components/response_dialog.dart';
 import 'package:bytebank/components/transaction_auth_dialog.dart';
 import 'package:bytebank/http/webclients/transaction_webclient.dart';
 import 'package:bytebank/models/contact.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
+import 'package:giffy_dialog/giffy_dialog.dart';
 import 'package:uuid/uuid.dart';
 
 import '../http/webclients/http_exception.dart';
@@ -25,10 +27,12 @@ class _TransactionFormState extends State<TransactionForm> {
   final TransactionWebClient _webClient = TransactionWebClient();
   final String transactionId = Uuid().v4();
   bool _sending = false;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       appBar: AppBar(
         title: const Text('New transaction'),
       ),
@@ -41,7 +45,9 @@ class _TransactionFormState extends State<TransactionForm> {
               Visibility(
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: Progress(message: 'Sending transaction...',),
+                  child: Progress(
+                    message: 'Sending transaction...',
+                  ),
                 ),
                 visible: _sending,
               ),
@@ -107,12 +113,11 @@ class _TransactionFormState extends State<TransactionForm> {
     String password,
     BuildContext context,
   ) async {
-    Transaction transaction = await _send(
+    await _send(
       transactionCreated,
       password,
       context,
     );
-    _showSuccessfulMessage(transaction, context);
   }
 
   Future _showSuccessfulMessage(
@@ -127,39 +132,81 @@ class _TransactionFormState extends State<TransactionForm> {
     }
   }
 
-  Future<Transaction> _send(Transaction transactionCreated, String password,
+  Future<void> _send(Transaction transactionCreated, String password,
       BuildContext context) async {
     setState(() {
       _sending = true;
     });
-    final Transaction transaction =
-        await _webClient.save(transactionCreated, password).catchError((e) {
-      _showFailureMessage(context, message: e.message);
-    }, test: (e) => e is HttpException).catchError((e) {
-      _showFailureMessage(context,
-          message: 'timeout submitting the transaction');
-    }, test: (e) => e is TimeoutException).catchError((e) {
+
+    try {
+      final Transaction transaction =
+          await _webClient.save(transactionCreated, password);
+      _showSuccessfulMessage(transaction, context);
+    } on TimeoutException catch (e) {
+      if (FirebaseCrashlytics.instance.isCrashlyticsCollectionEnabled) {
+        FirebaseCrashlytics.instance.setCustomKey('Excepion', e.toString());
+        FirebaseCrashlytics.instance
+            .setCustomKey('Http_body', transactionCreated.toString());
+        FirebaseCrashlytics.instance.recordError(e, null);
+      }
+
+      _showFailureMessage(context, message: e.message.toString());
+    } on HttpException catch (e) {
+      if (FirebaseCrashlytics.instance.isCrashlyticsCollectionEnabled) {
+        FirebaseCrashlytics.instance.setCustomKey('Excepion', e.toString());
+        FirebaseCrashlytics.instance
+            .setCustomKey('Http_code', e.statusCode.toString());
+        FirebaseCrashlytics.instance
+            .setCustomKey('Http_body', transactionCreated.toString());
+        FirebaseCrashlytics.instance.recordError(e, null);
+      }
+
+      _showFailureMessage(context, message: e.message.toString());
+    } on Exception catch (e) {
+      if (FirebaseCrashlytics.instance.isCrashlyticsCollectionEnabled) {
+        FirebaseCrashlytics.instance.setCustomKey('Excepion', e.toString());
+        FirebaseCrashlytics.instance
+            .setCustomKey('Http_body', transactionCreated.toString());
+        FirebaseCrashlytics.instance.recordError(e, null);
+      }
+
       _showFailureMessage(context);
-    }).whenComplete((){
+    } finally {
       setState(() {
         _sending = false;
       });
-        });
-
-
-
-    return transaction;
+    }
   }
 
-  //TODO CONSERTAR CÓD ESTÁ SEMPRE ENVIANDO ESSE ERRO
   void _showFailureMessage(
     BuildContext context, {
     String message = 'Unknown error',
   }) {
     showDialog(
-        context: context,
-        builder: (contextDialog) {
-          return FailureDialog(message);
-        });
+      context: context,
+      builder: (_) => NetworkGiffyDialog(
+        image: Image.asset('images/giphy.gif'),
+        title: const Text('OOOPS',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 22.0, fontWeight: FontWeight.w600)),
+        description: Text(
+          message,
+          textAlign: TextAlign.center,
+        ),
+        entryAnimation: EntryAnimation.TOP,
+        onOkButtonPressed: () {
+          Navigator.pop(context);
+        },
+      ),
+    );
+    //SnackBar
+    //ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+
+    //Pop up na tela (tamanho grande)
+    // showDialog(
+    //     context: context,
+    //     builder: (contextDialog) {
+    //       return FailureDialog(message);
+    //     });
   }
 }
